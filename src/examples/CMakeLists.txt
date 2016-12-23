@@ -28,3 +28,7 @@ set_target_properties(IfcOpenHouse PROPERTIES FOLDER Examples)
 ADD_EXECUTABLE(IfcAdvancedHouse IfcAdvancedHouse.cpp)
 TARGET_LINK_LIBRARIES(IfcAdvancedHouse ${IFCOPENSHELL_LIBRARIES} ${OPENCASCADE_LIBRARIES})
 set_target_properties(IfcAdvancedHouse PROPERTIES FOLDER Examples)
+
+ADD_EXECUTABLE(IfcDumpGeomExample IfcDumpGeomExample.cpp)
+TARGET_LINK_LIBRARIES(IfcDumpGeomExample IfcParse ${IFCOPENSHELL_LIBRARIES} ${OPENCASCADE_LIBRARIES} ${Boost_LIBRARIES})
+set_target_properties(IfcDumpGeomExample PROPERTIES FOLDER Examples)
