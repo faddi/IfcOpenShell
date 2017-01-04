@@ -19,18 +19,20 @@
 
 /********************************************************************************
  *                                                                              *
- * This started as a brief example of how IfcOpenShell can be interfaced from   * 
+ * This started as a brief example of how IfcOpenShell can be interfaced from   *
  * within a C++ context, it has since then evolved into a fullfledged command   *
  * line application that is able to convert geometry in an IFC files into       *
  * several tesselated and topological output formats.                           *
  *                                                                              *
  ********************************************************************************/
 
+#include "../ifcconvert/Serializer.h"
 #include "../ifcconvert/ColladaSerializer.h"
 #include "../ifcconvert/IgesSerializer.h"
 #include "../ifcconvert/StepSerializer.h"
 #include "../ifcconvert/WavefrontObjSerializer.h"
 #include "../ifcconvert/XmlSerializer.h"
+#include "../ifcconvert/JSONSerializer.h"
 #include "../ifcconvert/SvgSerializer.h"
 
 #include "../ifcgeom/IfcGeomIterator.h"
@@ -71,6 +73,7 @@ void print_usage(bool suggest_help = true)
         << "  .stp   STEP           Standard for the Exchange of Product Data" << "\n"
         << "  .igs   IGES           Initial Graphics Exchange Specification" << "\n"
         << "  .xml   XML            Property definitions and decomposition tree" << "\n"
+        << "  .json  JSON           Property definitions and decomposition tree" << "\n"
         << "  .svg   SVG            Scalable Vector Graphics (2D floor plan)" << "\n"
         << "\n"
         << "If no output filename given, <input>." + DEFAULT_EXTENSION + " will be used as the output file.\n";
@@ -143,7 +146,7 @@ int main(int argc, char** argv) {
 			"vector will only contain unique xyz-triplets. This results in a "
 			"manifold mesh which is useful for modelling applications, but might "
 			"result in unwanted shading artefacts in rendering applications.")
-		("use-world-coords", 
+		("use-world-coords",
 			"Specifies whether to apply the local placements of building elements "
 			"directly to the coordinates of the representation mesh rather than "
 			"to represent the local placement in the 4x3 matrix, which will in that "
@@ -152,7 +155,7 @@ int main(int argc, char** argv) {
 			"Specifies whether to convert back geometrical output back to the "
 			"unit of measure in which it is defined in the IFC file. Default is "
 			"to use meters.")
-		("sew-shells", 
+		("sew-shells",
 			"Specifies whether to sew the faces of IfcConnectedFaceSets together. "
 			"This is a potentially time consuming operation, but guarantees a "
 			"consistent orientation of surface normals, even if the faces are not "
@@ -162,21 +165,21 @@ int main(int argc, char** argv) {
 		// arguments where not introduced yet and a work-around was implemented to
 		// subtract multiple openings as a single compound. This hack is obsolete
 		// for newer versions of Open CASCADE.
-		("merge-boolean-operands", 
+		("merge-boolean-operands",
 			"Specifies whether to merge all IfcOpeningElement operands into a single "
 			"operand before applying the subtraction operation. This may "
 			"introduce a performance improvement at the risk of failing, in "
 			"which case the subtraction is applied one-by-one.")
 #endif
-		("disable-opening-subtractions", 
+		("disable-opening-subtractions",
 			"Specifies whether to disable the boolean subtraction of "
 			"IfcOpeningElement Representations from their RelatingElements.")
-		("enable-layerset-slicing", 
+		("enable-layerset-slicing",
 			"Specifies whether to enable the slicing of products according "
 			"to their associated IfcMaterialLayerSet.")
-		("include", 
+		("include",
             "Specifies that the entities and/or names listed after --entities and/or --names are to be included")
-		("exclude", 
+		("exclude",
             "Specifies that the entities and/or names listed after --entities and/or --names are to be excluded")
 		("entities", boost::program_options::value< std::vector<std::string> >(&entity_vector)->multitoken(),
 			"A list of entities that should be included in or excluded from the "
@@ -297,7 +300,7 @@ int main(int argc, char** argv) {
 		}
 	}
 
-	// Gets the set ifc types to be ignored from the command line. 
+	// Gets the set ifc types to be ignored from the command line.
 	std::set<std::string> entities(entity_vector.begin(), entity_vector.end());
 
 	const std::string input_filename = vmap["input-file"].as<std::string>();
@@ -308,10 +311,10 @@ int main(int argc, char** argv) {
 
 	// If no output filename is specified a Wavefront OBJ file will be output
 	// to maintain backwards compatibility with the obsolete IfcObj executable.
-	const std::string output_filename = vmap.count("output-file") == 1 
+	const std::string output_filename = vmap.count("output-file") == 1
 		? vmap["output-file"].as<std::string>()
 		: change_extension(input_filename, DEFAULT_EXTENSION);
-	
+
 	if (output_filename.size() < 5) {
         std::cerr << "[Error] Invalid or unsupported output file '" << output_filename << "' given" << std::endl;
         print_usage();
@@ -329,7 +332,10 @@ int main(int argc, char** argv) {
 
     std::string output_temp_filename = output_filename + TEMP_FILE_EXTENSION;
 
-	std::string output_extension = output_filename.substr(output_filename.size()-4);
+
+    std::size_t dotPos = output_filename.rfind(".");
+
+	std::string output_extension = output_filename.substr(dotPos, output_filename.size());
 	boost::to_lower(output_extension);
 
 	// If no entity or names filters are specified these are the defaults to skip from output
@@ -345,20 +351,32 @@ int main(int argc, char** argv) {
 	Logger::SetOutput(&std::cout, &log_stream);
 	Logger::Verbosity(verbose ? Logger::LOG_NOTICE : Logger::LOG_ERROR);
 
-	if (output_extension == ".xml") {
+    Logger::Message(Logger::LOG_NOTICE, "Type: '" + output_extension + "'");
+
+	if (output_extension == ".xml" || output_extension == ".json") {
 		int exit_code = 1;
 		try {
-			XmlSerializer s(output_temp_filename);
+
+
+            std::shared_ptr<Serializer> s;
+
+            if (output_extension == ".xml") {
+                s = std::make_shared<XmlSerializer>(output_temp_filename);
+            } else {
+                s = std::make_shared<JSONSerializer>(output_temp_filename);
+            }
+
 			IfcParse::IfcFile f;
 			if (!f.Init(input_filename)) {
 				Logger::Message(Logger::LOG_ERROR, "Unable to parse input file '" + input_filename + "'");
 			} else {
-				s.setFile(&f);
-				s.finalize();
+				s->setFile(&f);
+				s->finalize();
                 rename_file(output_temp_filename, output_filename);
 				exit_code = 0;
 			}
 		} catch (...) {}
+
 		write_log();
 		return exit_code;
 	}
@@ -461,7 +479,7 @@ int main(int argc, char** argv) {
 
 	time_t start,end;
 	time(&start);
-	
+
 	if (!context_iterator.initialize()) {
         /// @todo It would be nice to know and print separate error prints for a case where we failed to parse
         /// the file and for a case where we found no entities that satisfy our filtering criteria.
@@ -495,18 +513,18 @@ int main(int argc, char** argv) {
 
 	Logger::Status("Creating geometry...");
 
-	// The functions IfcGeom::Iterator::get() and IfcGeom::Iterator::next() 
-	// wrap an iterator of all geometrical products in the Ifc file. 
-	// IfcGeom::Iterator::get() returns an IfcGeom::TriangulationElement or 
-	// -BRepElement pointer, based on current settings. (see IfcGeomIterator.h 
-	// for definition) IfcGeom::Iterator::next() is used to poll whether more 
-	// geometrical entities are available. None of these functions throw 
-	// exceptions, neither for parsing errors or geometrical errors. Upon 
-	// calling next() the entity to be returned has already been processed, a 
-	// true return value guarantees that a successfully processed product is 
-	// available. 
+	// The functions IfcGeom::Iterator::get() and IfcGeom::Iterator::next()
+	// wrap an iterator of all geometrical products in the Ifc file.
+	// IfcGeom::Iterator::get() returns an IfcGeom::TriangulationElement or
+	// -BRepElement pointer, based on current settings. (see IfcGeomIterator.h
+	// for definition) IfcGeom::Iterator::next() is used to poll whether more
+	// geometrical entities are available. None of these functions throw
+	// exceptions, neither for parsing errors or geometrical errors. Upon
+	// calling next() the entity to be returned has already been processed, a
+	// true return value guarantees that a successfully processed product is
+	// available.
 	size_t num_created = 0;
-	
+
 	do {
         IfcGeom::Element<real_t> *geom_object = context_iterator.get();
 		if (is_tesselated) {
