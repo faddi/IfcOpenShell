@@ -22,7 +22,7 @@ cmake_minimum_required (VERSION 2.8.5)
 project (IfcOpenShell)
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
-# set(CMAKE_CXX_STANDARD 11)
+set(CMAKE_CXX_STANDARD 11)
 # set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 OPTION(UNICODE_SUPPORT "Build IfcOpenShell with Unicode support (requires ICU)." ON)
@@ -119,6 +119,10 @@ ENDIF()
 FIND_PACKAGE(Boost REQUIRED COMPONENTS system program_options regex thread date_time)
 MESSAGE(STATUS "Boost include files found in ${Boost_INCLUDE_DIRS}")
 MESSAGE(STATUS "Boost libraries found in ${Boost_LIBRARY_DIRS}")
+
+
+
+FIND_PACKAGE(Curl REQUIRED)
 
 # Usage:
 # set(SOME_LIRARIES foo bar)
@@ -558,7 +562,7 @@ if (IFCCONVERT_DOUBLE_PRECISION)
     set_target_properties(IfcConvert PROPERTIES COMPILE_FLAGS -DIFCCONVERT_DOUBLE_PRECISION)
 endif()
 
-TARGET_LINK_LIBRARIES(IfcConvert ${IFCOPENSHELL_LIBRARIES} ${OPENCASCADE_LIBRARIES} ${Boost_LIBRARIES} ${OPENCOLLADA_LIBRARIES} ${ICU_LIBRARIES} "/usr/local/lib/libneo4j-client.dylib")
+TARGET_LINK_LIBRARIES(IfcConvert ${IFCOPENSHELL_LIBRARIES} ${OPENCASCADE_LIBRARIES} ${Boost_LIBRARIES} ${OPENCOLLADA_LIBRARIES} ${ICU_LIBRARIES} "/usr/local/lib/libneo4j-client.dylib" ${CURL_LIBRARIES})
 if ((NOT WIN32) AND BUILD_SHARED_LIBS)
     # Only set RPATHs when building shared libraries (i.e. IfcParse and
     # IfcGeom are dynamically linked). Not necessarily a perfect solution

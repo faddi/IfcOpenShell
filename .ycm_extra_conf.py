@@ -68,12 +68,14 @@ flags = [
 '../llvm/include',
 '-isystem',
 '../llvm/tools/clang/include',
+'-isystem',
+'/usr/local/include/oce/',
 '-I',
 '.',
 '-I',
-'./ClangCompleter',
-'-isystem',
-'/usr/local/include/'
+'./ClangCompleter'
+'-I',
+'./src/examples/'
 ]
 
 

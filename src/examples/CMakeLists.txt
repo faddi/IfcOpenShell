@@ -20,6 +20,8 @@
 set(CMAKE_CXX_STANDARD 11)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+find_package(PostgreSQL)
+
 ADD_EXECUTABLE(IfcParseExamples IfcParseExamples.cpp)
 TARGET_LINK_LIBRARIES(IfcParseExamples IfcParse)
 set_target_properties(IfcParseExamples PROPERTIES FOLDER Examples)
@@ -32,6 +34,9 @@ ADD_EXECUTABLE(IfcAdvancedHouse IfcAdvancedHouse.cpp)
 TARGET_LINK_LIBRARIES(IfcAdvancedHouse ${IFCOPENSHELL_LIBRARIES} ${OPENCASCADE_LIBRARIES})
 set_target_properties(IfcAdvancedHouse PROPERTIES FOLDER Examples)
 
+
+include_directories(PostgreSQL_INCLUDE_DIRS)
+
 ADD_EXECUTABLE(IfcDumpGeomExample IfcDumpGeomExample.cpp)
-TARGET_LINK_LIBRARIES(IfcDumpGeomExample IfcParse ${IFCOPENSHELL_LIBRARIES} ${OPENCASCADE_LIBRARIES} ${Boost_LIBRARIES})
+TARGET_LINK_LIBRARIES(IfcDumpGeomExample IfcParse ${IFCOPENSHELL_LIBRARIES} ${OPENCASCADE_LIBRARIES} ${Boost_LIBRARIES} ${PostgreSQL_LIBRARIES} "/usr/local/lib/libpqxx.dylib")
 set_target_properties(IfcDumpGeomExample PROPERTIES FOLDER Examples)

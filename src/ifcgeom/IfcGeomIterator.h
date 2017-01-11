@@ -45,7 +45,7 @@
  *                                                                              *
  * IfcGeom::Iterator::get()                                                     *
  *   returns a pointer to the current IfcGeom::Element                          *
- *                                                                              * 
+ *                                                                              *
  * IfcGeom::Iterator::next()                                                    *
  *   returns true iff a following entity is available for a successive call to  *
  *   IfcGeom::Iterator::get()                                                   *
@@ -91,7 +91,7 @@
 #endif
 
 namespace IfcGeom {
-	
+
 	template <typename P>
 	class Iterator {
 	private:
@@ -111,7 +111,7 @@ namespace IfcGeom {
 		TriangulationElement<P>* current_triangulation;
 		BRepElement<P>* current_shape_model;
 		SerializedElement<P>* current_serialization;
-		
+
 		// A container and iterator for IfcBuildingElements for the current IfcRepresentation referenced by *representation_iterator
 		IfcSchema::IfcProduct::list::ptr ifcproducts;
 		IfcSchema::IfcProduct::list::it ifcproduct_iterator;
@@ -170,7 +170,7 @@ namespace IfcGeom {
 
 			std::set<std::string> context_types;
             if (!settings.get(IteratorSettings::EXCLUDE_SOLIDS_AND_SURFACES)) {
-				// Really this should only be 'Model', as per 
+				// Really this should only be 'Model', as per
 				// the standard 'Design' is deprecated. So,
 				// just for backwards compatibility:
 				context_types.insert("model");
@@ -181,7 +181,7 @@ namespace IfcGeom {
 			}
             if (settings.get(IteratorSettings::INCLUDE_CURVES)) {
 				context_types.insert("plan");
-			}			
+			}
 
 			double lowest_precision_encountered = std::numeric_limits<double>::infinity();
 			bool any_precision_encountered = false;
@@ -190,7 +190,7 @@ namespace IfcGeom {
 
 			IfcSchema::IfcGeometricRepresentationContext::list::it it;
 			IfcSchema::IfcGeometricRepresentationSubContext::list::it jt;
-			IfcSchema::IfcGeometricRepresentationContext::list::ptr contexts = 
+			IfcSchema::IfcGeometricRepresentationContext::list::ptr contexts =
 				ifc_file->entitiesByType<IfcSchema::IfcGeometricRepresentationContext>();
 
 			IfcSchema::IfcGeometricRepresentationContext::list::ptr filtered_contexts (new IfcSchema::IfcGeometricRepresentationContext::list);
@@ -243,7 +243,7 @@ namespace IfcGeom {
 					representations->push((*jt)->RepresentationsInContext());
 				}
 				// There is no need for full recursion as the following is governed by the schema:
-				// WR31: The parent context shall not be another geometric representation sub context. 
+				// WR31: The parent context shall not be another geometric representation sub context.
 			}
 
 			if (any_precision_encountered) {
@@ -286,7 +286,7 @@ namespace IfcGeom {
                 IfcSchema::IfcProduct* product = *iter;
                 if (product->hasObjectPlacement()) {
 					// Use a fresh trsf every time in order to prevent the result to be concatenated
-                    gp_Trsf trsf; 
+                    gp_Trsf trsf;
 					bool success = false;
 					try {
 						success = kernel.convert(product->ObjectPlacement(), trsf);
@@ -313,7 +313,7 @@ namespace IfcGeom {
 		const std::string& getUnitName() const { return unit_name; }
 
 		P getUnitMagnitude() const { return unit_magnitude; }
-	
+
 		std::string getLog() const { return Logger::GetLog(); }
 
 		IfcParse::IfcFile* getFile() const { return ifc_file; }
@@ -395,7 +395,7 @@ namespace IfcGeom {
 
 				// Has the list of IfcProducts for this representation been initialized?
 				if (!ifcproducts) {
-					
+
 					ifcproducts = IfcSchema::IfcProduct::list::ptr(new IfcSchema::IfcProduct::list);
 					IfcSchema::IfcProduct::list::ptr unfiltered_products(new IfcSchema::IfcProduct::list);
 
@@ -409,7 +409,7 @@ namespace IfcGeom {
 							}
 							else {
 								// http://buildingsmart-tech.org/ifc/IFC2x3/TC1/html/ifcrepresentationresource/lexical/ifcproductrepresentation.htm
-								// IFC2x Edition 3 NOTE  Users should not instantiate the entity IfcProductRepresentation from IFC2x Edition 3 onwards. 
+								// IFC2x Edition 3 NOTE  Users should not instantiate the entity IfcProductRepresentation from IFC2x Edition 3 onwards.
 								// It will be changed into an ABSTRACT supertype in future releases of IFC.
 
 								// IfcProductRepresentation also lacks the INVERSE relation to IfcProduct
@@ -436,7 +436,7 @@ namespace IfcGeom {
 							}
 						}
 					}
-					
+
 					// With world coords enabled, object transformations are directly applied to
 					// the BRep. There is no way to re-use the geometry for multiple products.
 					const bool process_maps_for_current_representation = !settings.get(IteratorSettings::USE_WORLD_COORDS) &&
@@ -445,7 +445,7 @@ namespace IfcGeom {
 					bool representation_processed_as_mapped_item = false;
 
 					IfcSchema::IfcRepresentation* representation_mapped_to = 0;
-					
+
 					if (process_maps_for_current_representation) {
 						IfcSchema::IfcRepresentationItem::list::ptr items = representation->Items();
 						if (items->size() == 1) {
@@ -498,7 +498,7 @@ namespace IfcGeom {
 					}
 
 					IfcSchema::IfcRepresentationMap::list::ptr maps = representation->RepresentationMap();
-					
+
 					if (process_maps_for_current_representation && maps->size() == 1) {
 						IfcSchema::IfcRepresentationMap* map = *maps->begin();
 						if (kernel.is_identity_transform(map->MappingOrigin())) {
@@ -506,7 +506,7 @@ namespace IfcGeom {
 							for (IfcSchema::IfcMappedItem::list::it it = items->begin(); it != items->end(); ++it) {
 								IfcSchema::IfcMappedItem* item = *it;
 								if (item->StyledByItem()->size() != 0) continue;
-								
+
 								if (!kernel.is_identity_transform(item->MappingTarget())) {
 									continue;
 								}
@@ -603,7 +603,7 @@ namespace IfcGeom {
 				IfcSchema::IfcProduct* product = *ifcproduct_iterator;
 
 				Logger::SetProduct(product);
-                
+
                 BRepElement<P>* element;
 				if (ifcproduct_iterator == ifcproducts->begin() || !settings.get(IteratorSettings::USE_WORLD_COORDS)) {
 					element = kernel.create_brep_for_representation_and_product<P>(settings, representation, product);
@@ -619,7 +619,7 @@ namespace IfcGeom {
 				}
 
 				return element;
-			}	
+			}
 		}
 
 		void free_shapes() {
@@ -660,16 +660,16 @@ namespace IfcGeom {
 			gp_Trsf trsf;
 			int parent_id = -1;
 			std::string instance_type, product_name, product_guid;
-			
+
 			try {
 				const IfcUtil::IfcBaseClass* ifc_entity = ifc_file->entityById(id);
 				instance_type = IfcSchema::Type::ToString(ifc_entity->type());
 				if ( ifc_entity->is(IfcSchema::Type::IfcProduct) ) {
 					IfcSchema::IfcProduct* ifc_product = (IfcSchema::IfcProduct*)ifc_entity;
-					
+
 					product_guid = ifc_product->GlobalId();
 					product_name = ifc_product->hasName() ? ifc_product->Name() : "";
-					
+
 					parent_id = -1;
 					try {
 						IfcSchema::IfcObjectDefinition* parent_object = kernel.get_decomposing_entity(ifc_product);
@@ -677,7 +677,7 @@ namespace IfcGeom {
 							parent_id = parent_object->entity->id();
 						}
 					} catch (...) {}
-					
+
 					try {
 						kernel.convert(ifc_product->ObjectPlacement(), trsf);
 					} catch (...) {}
@@ -686,7 +686,7 @@ namespace IfcGeom {
 
 			ElementSettings element_settings(settings, unit_magnitude, instance_type);
 			Element<P>* ifc_object = new Element<P>(element_settings, id, parent_id, product_name, instance_type, product_guid, "", trsf);
-			
+
 			return ifc_object;
 		}
 

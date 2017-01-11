@@ -56,46 +56,142 @@ namespace importer {
     typedef std::map<std::string, std::string> ssMap;
     typedef rapidjson::Value jValue;
     typedef rapidjson::Document jDoc;
+    typedef double real_t;
 
 
-    /*
-      void fetchGeom (IfcGeom::Iterator<double> &contextIterator) {
+    void fetchGeom (IfcGeom::Iterator<double> &contextIterator, pqxx::connection& con) {
 
-      std::vector<std::string> allIds;
-      unsigned int total = 0;
+        std::vector<std::string> allIds;
+        unsigned int total = 0;
 
-      do
-      {
+        do
+        {
 
-      total++;
-      std::cout << "t: " << total << "\n";
-      IfcGeom::Element<double> *ob = contextIterator.get();
-      auto ob_geo = static_cast<const IfcGeom::TriangulationElement<double>*>(ob);
-      // std::cout << "--------------------------------------------------------------------------------\n";
-      // std::cout << "Type: " << ob->type() << "\n";
-      // std::cout << "Id: " << ob->id() << "\n";
-      // std::cout << "Name: " << ob->name() << "\n";
+            total++;
+            std::cout << "t: " << total << "\n";
+            IfcGeom::Element<double> *ob = contextIterator.get();
+            auto ob_geo = static_cast<const IfcGeom::TriangulationElement<double>*>(ob);
+            // std::cout << "--------------------------------------------------------------------------------\n";
+            // std::cout << "Type: " << ob->type() << "\n";
+            // std::cout << "Id: " << ob->id() << "\n";
+            // std::cout << "Name: " << ob->name() << "\n";
 
 
-      if (ob_geo)
-      {
-      auto faces = ob_geo->geometry().faces();
-      auto vertices = ob_geo->geometry().verts();
+            if (ob_geo)
+            {
 
-      // auto normals = ob_geo->geometry().normals();
-      // auto uvs = ob_geo->geometry().uvs();
+                jDoc d;
+                d.SetObject();
 
-      // std::cout << "Vertices: " << vertices.size() << "\n";
-      // std::cout << "Faces: " << faces.size() << "\n";
 
-      }
 
-      } while (contextIterator.next());
+                auto& mesh = ob_geo->geometry();
 
-      // std::cout << "--------------------------------------------------------------------------------";
-      // std::cout << "Total: " << total << "\n";
-      }
-    */
+                jValue verts;
+                verts.SetArray();
+
+                for ( std::vector<real_t>::const_iterator it = mesh.verts().begin(); it != mesh.verts().end(); ) {
+                    jValue v;
+                    v.SetArray();
+                    v.PushBack((*it++), d.GetAllocator());
+                    v.PushBack((*it++), d.GetAllocator());
+                    v.PushBack((*it++), d.GetAllocator());
+                    verts.PushBack(v, d.GetAllocator());
+                }
+
+                d.AddMember("verts", verts, d.GetAllocator());
+
+
+                jValue faces;
+                faces.SetArray();
+
+                for ( std::vector<int>::const_iterator it = mesh.faces().begin(); it != mesh.faces().end(); ) {
+                    jValue v;
+                    v.SetArray();
+
+                    // const int material_id = *(material_it++);
+                    // if (material_id != previous_material_id) {
+                    //     const IfcGeom::Material& material = mesh.materials()[material_id];
+                    //     std::string material_name = (settings().get(IfcGeom::IteratorSettings::USE_MATERIAL_NAMES)
+                    //                                  ? material.original_name() : material.name());
+                    //     IfcUtil::sanitate_material_name(material_name);
+                    //     obj_stream << "usemtl " << material_name << "\n";
+                    //     if (materials.find(material_name) == materials.end()) {
+                    //         writeMaterial(material);
+                    //         materials.insert(material_name);
+                    //     }
+                    //     previous_material_id = material_id;
+                    // }
+
+                    v.PushBack(*(it++), d.GetAllocator());
+                    v.PushBack(*(it++), d.GetAllocator());
+                    v.PushBack(*(it++), d.GetAllocator());
+
+                    // if (has_normals && has_uvs) {
+                    //     obj_stream << "f " << v1 << "/" << v1 << "/" << v1 << " "
+                    //                << v2 << "/" << v2 << "/" << v2 << " "
+                    //                << v3 << "/" << v3 << "/" << v3 << "\n";
+                    // } else if (has_normals) {
+                    //     obj_stream << "f " << v1 << "//" << v1 << " "
+                    //                << v2 << "//" << v2 << " "
+                    //                << v3 << "//" << v3 << "\n";
+                    // } else {
+                    //     obj_stream << "f " << v1 << " " << v2 << " " << v3 << "\n";
+                    // }
+
+                    faces.PushBack(v, d.GetAllocator());
+                }
+                d.AddMember("faces", faces, d.GetAllocator());
+
+                jValue normals;
+                normals.SetArray();
+                for ( std::vector<real_t>::const_iterator it = mesh.normals().begin(); it != mesh.normals().end(); ) {
+                    jValue v;
+                    v.SetArray();
+
+                    v.PushBack(*(it++), d.GetAllocator());
+                    v.PushBack(*(it++), d.GetAllocator());
+                    v.PushBack(*(it++), d.GetAllocator());
+
+                    normals.PushBack(v, d.GetAllocator());
+                }
+                d.AddMember("normals", normals, d.GetAllocator());
+
+                jValue uvs;
+                uvs.SetArray();
+                for (std::vector<real_t>::const_iterator it = mesh.uvs().begin(); it != mesh.uvs().end();) {
+                    jValue v;
+                    v.SetArray();
+                    v.PushBack(*(it++), d.GetAllocator());
+                    v.PushBack(*(it++), d.GetAllocator());
+                    uvs.PushBack(v, d.GetAllocator());
+                }
+                d.AddMember("uvs", uvs, d.GetAllocator());
+
+
+                // INSERT
+
+                rapidjson::StringBuffer buf;
+                rapidjson::Writer<rapidjson::StringBuffer> w(buf);
+                d.Accept(w);
+
+                std::string json = std::string(buf.GetString());
+
+                std::stringstream s;
+
+                s << "UPDATE " << con.esc(importer::DATA_TABLE) << " \n"
+                  << "SET geometry = '" << con.esc(json) << "' \n"
+                  << "WHERE entityid = " << ob->id() << ";";
+
+                pqxx::nontransaction W(con);
+                W.exec( s.str().c_str() );
+            }
+
+        } while (contextIterator.next());
+
+        // std::cout << "--------------------------------------------------------------------------------";
+        // std::cout << "Total: " << total << "\n";
+    }
 
 
     void findEnt ( std::string type, IfcParse::IfcFile& file) {
@@ -331,15 +427,29 @@ namespace importer {
 
     void generateGeometry(IfcParse::IfcFile& file, pqxx::connection& con) {
 
+        IfcGeom::IteratorSettings settings;
+        settings.set(IfcGeom::IteratorSettings::USE_WORLD_COORDS, false);
+        settings.set(IfcGeom::IteratorSettings::WELD_VERTICES, false);
+        settings.set(IfcGeom::IteratorSettings::CONVERT_BACK_UNITS, true);
+        // settings.set(IfcGeom::IteratorSettings::APPLY_DEFAULT_MATERIALS, false);
+        // settings.set(IfcGeom::IteratorSettings::DISABLE_OPENING_SUBTRACTIONS, false);
+        settings.set(IfcGeom::IteratorSettings::NO_NORMALS, false);
+        // settings.set(IfcGeom::IteratorSettings::WELD_VERTICES, false);
+        // // settings.set(IfcGeom::IteratorSettings::DISABLE_TRIANGULATION, true);
+        // settings.set(IfcGeom::IteratorSettings::FASTER_BOOLEANS, true);
+        settings.set(IfcGeom::IteratorSettings::GENERATE_UVS, true);
+        // settings.set(IfcGeom::IteratorSettings::USE_WORLD_COORDS, true);
+        // settings.set(IfcGeom::IteratorSettings::SEW_SHELLS, true);
+        // // settings.set(IfcGeom::IteratorSettings::TRAVERSE, true);
 
-        IfcSchema::IfcGeometricRepresentationContext::list::ptr contexts = file.entitiesByType<IfcSchema::IfcGeometricRepresentationContext>();
+        IfcGeom::Iterator<double> contextIterator(settings, &file);
 
-        std::cout << contexts->size() << std::endl;
-
-        for (auto& c : *contexts) {
-            std::cout << c->entity->id() << std::endl;
+        if (contextIterator.initialize() == false) {
+            std::cout << "failed to initialize contextIterator.\n";
+            return;
         }
 
+        fetchGeom(contextIterator, con);
     }
 
     void doImport(IfcParse::IfcFile& file, pqxx::connection& con) {
@@ -403,10 +513,10 @@ namespace importer {
         std::cout << "Executing query." << std::endl;
         pqxx::nontransaction W(con);
         W.exec( s.str().c_str() );
-        s.str("");
-        s << "INSERT INTO " << con.esc(importer::DATA_TABLE) << " (id, entityId, type, properties, entity) VALUES \n";
+        // s.str("");
+        // s << "INSERT INTO " << con.esc(importer::DATA_TABLE) << " (id, entityId, type, properties, entity) VALUES \n";
 
-        std::cout << "Done." << std::endl;
+        // std::cout << "Done." << std::endl;
 
         // std::cout << s.str().c_str() << std::endl;
 
@@ -493,7 +603,8 @@ bool create_table (pqxx::connection& con) {
           << "entityId       INT NOT NULL,"
           << "type           ifctypes    NOT NULL,"
           << "properties     JSONB     NOT NULL,"
-          << "entity         TEXT)";
+          << "entity         TEXT,"
+          << "geometry       JSONB)";
 
         W.exec( s.str().c_str() );
 
@@ -539,18 +650,17 @@ int main(int argc, char** argv) {
             return 1;
         }
 
+
+        if (!create_table(con)) {
+            std::cout << "Couldn't create table";
+            return 1;
+        }
+
+        importer::doImport(file, con);
         importer::generateGeometry(file, con);
-
-        // if (!create_table(con)) {
-        //     std::cout << "Couldn't create table";
-        //     return 1;
-        // }
-
-        // importer::doImport(file, con);
 
         con.disconnect ();
         std::cout << "Connection closed." << std::endl;
-
 
     } catch (const std::exception& e) {
         std::cerr << e.what() << std::endl;
