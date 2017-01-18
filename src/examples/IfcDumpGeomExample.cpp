@@ -23,13 +23,14 @@
 #include "../ifcgeom/IfcGeom.h"
 #include "../ifcgeom/IfcGeomIterator.h"
 
+#include <neo4j-client.h>
 #include <pqxx/pqxx>
 
 #include <unordered_map>
 #include <map>
 #include <iterator>
 
-#include <boost/optional.hpp>
+// #include <boost/optional.hpp>
 
 #include <rapidjson/document.h>
 #include <rapidjson/stringbuffer.h>
@@ -51,6 +52,7 @@ using namespace IfcSchema;
 namespace importer {
 
     const std::string DATA_TABLE = "ifctable";
+    const std::string PROJECT_TABLE = "ifcproject";
     const std::string DATA_IFCTYPE = "ifctypes";
 
     typedef std::map<std::string, std::string> ssMap;
@@ -59,7 +61,7 @@ namespace importer {
     typedef double real_t;
 
 
-    void fetchGeom (IfcGeom::Iterator<double> &contextIterator, pqxx::connection& con) {
+    void fetchGeom (IfcGeom::Iterator<double> &contextIterator, pqxx::connection& con, int project) {
 
         std::vector<std::string> allIds;
         unsigned int total = 0;
@@ -155,7 +157,7 @@ namespace importer {
 
                     normals.PushBack(v, d.GetAllocator());
                 }
-                d.AddMember("normals", normals, d.GetAllocator());
+                // d.AddMember("normals", normals, d.GetAllocator());
 
                 jValue uvs;
                 uvs.SetArray();
@@ -166,7 +168,7 @@ namespace importer {
                     v.PushBack(*(it++), d.GetAllocator());
                     uvs.PushBack(v, d.GetAllocator());
                 }
-                d.AddMember("uvs", uvs, d.GetAllocator());
+                // d.AddMember("uvs", uvs, d.GetAllocator());
 
 
                 // INSERT
@@ -181,10 +183,10 @@ namespace importer {
 
                 s << "UPDATE " << con.esc(importer::DATA_TABLE) << " \n"
                   << "SET geometry = '" << con.esc(json) << "' \n"
-                  << "WHERE entityid = " << ob->id() << ";";
+                  << "WHERE entityid = " << ob->id() << " AND projectid = " << project << ";";
 
-                pqxx::nontransaction W(con);
-                W.exec( s.str().c_str() );
+                // pqxx::nontransaction W(con);
+                // W.exec( s.str().c_str() );
             }
 
         } while (contextIterator.next());
@@ -280,43 +282,55 @@ namespace importer {
             // value = stream.str();
             break; }
         case IfcUtil::Argument_ENTITY_INSTANCE: {
+            // IfcEntityList::ptr list = *argument;
+
             IfcUtil::IfcBaseClass* e = *argument;
-            if (Type::IsSimple(e->type())) {
-                IfcUtil::IfcBaseType* f = (IfcUtil::IfcBaseType*) e;
-                value = format_attribute(f->getArgument(0), f->getArgumentType(0), argument_name, alloc);
-            } else if (e->is(IfcSchema::Type::IfcSIUnit) || e->is(IfcSchema::Type::IfcConversionBasedUnit)) {
-                // Some string concatenation to have a unit name as a XML attribute.
 
-                std::string unit_name;
+            jValue inner;
+            inner.SetArray();
 
-                if (e->is(IfcSchema::Type::IfcSIUnit)) {
-                    IfcSchema::IfcSIUnit* unit = (IfcSchema::IfcSIUnit*) e;
-                    unit_name = IfcSchema::IfcSIUnitName::ToString(unit->Name());
-                    if (unit->hasPrefix()) {
-                        unit_name = IfcSchema::IfcSIPrefix::ToString(unit->Prefix()) + unit_name;
-                    }
-                } else {
-                    IfcSchema::IfcConversionBasedUnit* unit = (IfcSchema::IfcConversionBasedUnit*) e;
-                    unit_name = unit->Name();
-                }
+            inner.PushBack(e->entity->id(), alloc);
 
-                value = jValue(unit_name.c_str(), alloc);
-            } else if (e->is(IfcSchema::Type::IfcLocalPlacement)) {
-                IfcSchema::IfcLocalPlacement* placement = e->as<IfcSchema::IfcLocalPlacement>();
-                gp_Trsf trsf;
-                IfcGeom::Kernel kernel;
-                if (kernel.convert(placement, trsf)) {
-                    std::stringstream stream;
-                    for (int i = 1; i < 5; ++i) {
-                        for (int j = 1; j < 4; ++j) {
-                            const double trsf_value = trsf.Value(j, i);
-                            stream << trsf_value << " ";
-                        }
-                        stream << ((i == 4) ? "1" : "0 ");
-                    }
-                    value = jValue(stream.str().c_str(), alloc);
-                }
-            }
+            value.SetObject();
+            value.AddMember("ref", inner, alloc);
+
+            // IfcUtil::IfcBaseClass* e = *argument;
+            // if (Type::IsSimple(e->type())) {
+            //     IfcUtil::IfcBaseType* f = (IfcUtil::IfcBaseType*) e;
+            //     value = format_attribute(f->getArgument(0), f->getArgumentType(0), argument_name, alloc);
+            // } else if (e->is(IfcSchema::Type::IfcSIUnit) || e->is(IfcSchema::Type::IfcConversionBasedUnit)) {
+            //     // Some string concatenation to have a unit name as a XML attribute.
+
+            //     std::string unit_name;
+
+            //     if (e->is(IfcSchema::Type::IfcSIUnit)) {
+            //         IfcSchema::IfcSIUnit* unit = (IfcSchema::IfcSIUnit*) e;
+            //         unit_name = IfcSchema::IfcSIUnitName::ToString(unit->Name());
+            //         if (unit->hasPrefix()) {
+            //             unit_name = IfcSchema::IfcSIPrefix::ToString(unit->Prefix()) + unit_name;
+            //         }
+            //     } else {
+            //         IfcSchema::IfcConversionBasedUnit* unit = (IfcSchema::IfcConversionBasedUnit*) e;
+            //         unit_name = unit->Name();
+            //     }
+
+            //     value = jValue(unit_name.c_str(), alloc);
+            // } else if (e->is(IfcSchema::Type::IfcLocalPlacement)) {
+            //     IfcSchema::IfcLocalPlacement* placement = e->as<IfcSchema::IfcLocalPlacement>();
+            //     gp_Trsf trsf;
+            //     IfcGeom::Kernel kernel;
+            //     if (kernel.convert(placement, trsf)) {
+            //         std::stringstream stream;
+            //         for (int i = 1; i < 5; ++i) {
+            //             for (int j = 1; j < 4; ++j) {
+            //                 const double trsf_value = trsf.Value(j, i);
+            //                 stream << trsf_value << " ";
+            //             }
+            //             stream << ((i == 4) ? "1" : "0 ");
+            //         }
+            //         value = jValue(stream.str().c_str(), alloc);
+            //     }
+            // }
             break; }
 
         case IfcUtil::Argument_AGGREGATE_OF_INT: {
@@ -372,7 +386,6 @@ namespace importer {
     }
 
 
-
     jDoc collect_props(IfcUtil::IfcBaseClass* instance) {
 
         jDoc d;
@@ -380,24 +393,28 @@ namespace importer {
 
         const unsigned n = instance->getArgumentCount();
         for (unsigned i = 0; i < n; ++i) {
-            const Argument* argument = instance->getArgument(i);
-            if (argument->isNull()) continue;
-
-            std::string argument_name = instance->getArgumentName(i);
-
-            const IfcUtil::ArgumentType argument_type = instance->getArgumentType(i);
-
-            // const std::string qualified_name = IfcSchema::Type::ToString(instance->type()) + "." + argument_name;
-            const std::string qualified_name = argument_name;
-            jValue value;
             try {
-                value = format_attribute(argument, argument_type, qualified_name, d.GetAllocator());
+
+                const Argument* argument = instance->getArgument(i);
+                if (argument->isNull()) continue;
+
+                std::string argument_name = instance->getArgumentName(i);
+
+
+                const IfcUtil::ArgumentType argument_type = instance->getArgumentType(i);
+
+                // const std::string qualified_name = IfcSchema::Type::ToString(instance->type()) + "." + argument_name;
+                const std::string qualified_name = argument_name;
+                jValue value;
+                try {
+                    value = format_attribute(argument, argument_type, qualified_name, d.GetAllocator());
+                } catch (...) {}
+
+                // t.insert(std::pair<std::string, std::string>(qualified_name, *value));
+
+                jValue k(qualified_name.c_str(), d.GetAllocator());
+                d.AddMember(k, value, d.GetAllocator());
             } catch (...) {}
-
-            // t.insert(std::pair<std::string, std::string>(qualified_name, *value));
-
-            jValue k(qualified_name.c_str(), d.GetAllocator());
-            d.AddMember(k, value, d.GetAllocator());
         }
 
         return d;
@@ -425,22 +442,23 @@ namespace importer {
     }
 
 
-    void generateGeometry(IfcParse::IfcFile& file, pqxx::connection& con) {
+    void generateGeometry(IfcParse::IfcFile& file, pqxx::connection& con, int project) {
 
         IfcGeom::IteratorSettings settings;
-        settings.set(IfcGeom::IteratorSettings::USE_WORLD_COORDS, false);
+        settings.set(IfcGeom::IteratorSettings::USE_WORLD_COORDS, true);
         settings.set(IfcGeom::IteratorSettings::WELD_VERTICES, false);
         settings.set(IfcGeom::IteratorSettings::CONVERT_BACK_UNITS, true);
         // settings.set(IfcGeom::IteratorSettings::APPLY_DEFAULT_MATERIALS, false);
         // settings.set(IfcGeom::IteratorSettings::DISABLE_OPENING_SUBTRACTIONS, false);
-        settings.set(IfcGeom::IteratorSettings::NO_NORMALS, false);
+        settings.set(IfcGeom::IteratorSettings::NO_NORMALS, true);
         // settings.set(IfcGeom::IteratorSettings::WELD_VERTICES, false);
         // // settings.set(IfcGeom::IteratorSettings::DISABLE_TRIANGULATION, true);
-        // settings.set(IfcGeom::IteratorSettings::FASTER_BOOLEANS, true);
-        settings.set(IfcGeom::IteratorSettings::GENERATE_UVS, true);
+        settings.set(IfcGeom::IteratorSettings::FASTER_BOOLEANS, true);
+        settings.set(IfcGeom::IteratorSettings::GENERATE_UVS, false);
         // settings.set(IfcGeom::IteratorSettings::USE_WORLD_COORDS, true);
-        // settings.set(IfcGeom::IteratorSettings::SEW_SHELLS, true);
+        settings.set(IfcGeom::IteratorSettings::SEW_SHELLS, true);
         // // settings.set(IfcGeom::IteratorSettings::TRAVERSE, true);
+        settings.set(IfcGeom::IteratorSettings::CENTER_MODEL, true);
 
         IfcGeom::Iterator<double> contextIterator(settings, &file);
 
@@ -449,19 +467,35 @@ namespace importer {
             return;
         }
 
-        fetchGeom(contextIterator, con);
+        fetchGeom(contextIterator, con, project);
     }
 
-    void doImport(IfcParse::IfcFile& file, pqxx::connection& con) {
-
-        // findEnt("IfcProject", file);
-        // findEnt("IfcBuilding", file);
-        // findEnt("IfcSite", file);
-        // findEnt("IfcBuildingStorey", file);
+    int doImport(IfcParse::IfcFile& file, pqxx::connection& con, std::string project) {
 
         std::stringstream s;
 
-        s << "INSERT INTO " << con.esc(importer::DATA_TABLE) << " (id, entityId, type, properties, entity) VALUES \n";
+        s << "INSERT INTO " << con.esc(importer::PROJECT_TABLE) << " (id, name) VALUES (default, '" << con.esc(project) << "') RETURNING *;";
+
+        pqxx::work W(con);
+        pqxx::result res( W.exec(s.str().c_str()) );
+
+        W.commit();
+
+        if (res.size() != 1) {
+            return -1;
+        }
+
+        int projectId = 0;
+
+        if (res[0][0].to(projectId) == false) {
+
+            std::cout << "Could not read project ID" << std::endl;
+            return -1;
+        }
+
+        s.str("");
+
+        s << "INSERT INTO " << con.esc(importer::DATA_TABLE) << " (id, entityId, type, properties, entity, projectId) VALUES \n";
 
         std::cout << "Building insert string";
 
@@ -471,7 +505,7 @@ namespace importer {
 
             IfcUtil::IfcBaseClass* i = a->second;
 
-            // print_type(i);
+            // std::cout << counter << std::endl;
 
             jDoc props = collect_props(i);
 
@@ -481,6 +515,8 @@ namespace importer {
 
             std::string json = std::string(buf.GetString());
 
+            // std::cout << json << std::endl;
+
             if (counter != 0) {
                 s << ",";
             }
@@ -489,7 +525,8 @@ namespace importer {
               << i->entity->id() << ", "
               << "'" << con.esc(IfcSchema::Type::ToString(i->type())) << "'" << ", "
               << "'" << con.esc(json) << "'" << ", "
-              << "'" << con.esc(i->entity->toString(false)) << "'"
+              << "'" << con.esc(i->entity->toString(false)) << "', "
+              << projectId
               << ") \n";
 
             if (counter % 10000 == 0 && counter > 0 ) {
@@ -499,7 +536,7 @@ namespace importer {
                 // std::cout << s.str() << std::endl;
                 W.exec( s.str().c_str() );
                 s.str("");
-                s << "INSERT INTO " << con.esc(importer::DATA_TABLE) << " (id, entityId, type, properties, entity) VALUES \n";
+                s << "INSERT INTO " << con.esc(importer::DATA_TABLE) << " (id, entityId, type, properties, entity, projectId) VALUES \n";
                 counter = 0;
                 continue;
             }
@@ -511,8 +548,8 @@ namespace importer {
 
         s << ";";
         std::cout << "Executing query." << std::endl;
-        pqxx::nontransaction W(con);
-        W.exec( s.str().c_str() );
+        pqxx::nontransaction W2(con);
+        W2.exec( s.str().c_str() );
         // s.str("");
         // s << "INSERT INTO " << con.esc(importer::DATA_TABLE) << " (id, entityId, type, properties, entity) VALUES \n";
 
@@ -523,9 +560,314 @@ namespace importer {
         // W.commit();
 
         std::cout << "Done." << std::endl;
+        return projectId;
+    }
+
+    // NEO
+
+    void recurseToParent(IfcUtil::IfcBaseClass* e, pqxx::connection& con, int projectId) {
+
+
+
+        /*
+        //besök rekursivt
+        shared_ptr<IfcObjectDefinition> ifc_product = dynamic_pointer_cast<IfcObjectDefinition>(node);
+        if (ifc_product)
+        {
+            //besök alla isDecomposedBy
+            for (auto &x : ifc_product->m_IsDecomposedBy_inverse)
+            {
+                shared_ptr<IfcRelAggregates> rel(x.lock());
+                for (auto &y : rel->m_RelatedObjects)
+                    visitParent(y, child, request);
+            }
+
+            shared_ptr<IfcSpatialStructureElement> spatial = dynamic_pointer_cast<IfcSpatialStructureElement>(node);
+            if (spatial)
+            {
+                //besök alla containselements
+                for (auto &x : spatial->m_ContainsElements_inverse)
+                {
+                    shared_ptr<IfcRelContainedInSpatialStructure> rel(x.lock());
+                    for (auto &y : rel->m_RelatedElements)
+                        visitParent(y, child, request);
+                }
+            }
+        }
+        */
+
+
+        IfcSchema::IfcObjectDefinition* objDef = static_cast<IfcSchema::IfcObjectDefinition*>(e);
+        if (!objDef) {
+            return;
+        }
+
+        // IfcSchema::IfcRelDecomposes::list::ptr decompList = objDef->Decomposes();
+        auto decompList = objDef->Decomposes();
+
+        for (auto* it: *decompList) {
+            // IfcTemplatedEntityList<IfcObjectDefinition>::ptr objects = it->RelatedObjects();
+            print_type(it->RelatingObject());
+            recurseToParent(it->RelatingObject(), con, projectId);
+        }
+
+        IfcSchema::IfcElement* element = static_cast<IfcSchema::IfcElement*>(e);
+        if (element) {
+
+            IfcTemplatedEntityList<IfcRelContainedInSpatialStructure>::ptr a = element->ContainedInStructure();
+            for ( IfcRelContainedInSpatialStructure::list::it itt = a->begin(); itt != a->end(); ++ itt ) {
+                IfcRelContainedInSpatialStructure* d = *itt;
+                print_type(d->RelatingStructure());
+                recurseToParent(d->RelatingStructure(), con, projectId);
+            }
+
+        }
+
+
+
+    }
+
+    void generateTree(IfcParse::IfcFile& file, pqxx::connection& con, int projectId) {
+
+        std::cout << "generating tree" << std::endl;
+
+        // IfcProduct::list::ptr elements = file.entitiesByType<IfcSchema::IfcProduct>();
+        IfcBuildingElement::list::ptr elements = file.entitiesByType<IfcBuildingElement>();
+
+        std::cerr << "Found " << elements->size() << " IfcBuildingElements" << std::endl;
+
+        for ( IfcBuildingElement::list::it it = elements->begin(); it != elements->end(); ++ it ) {
+            IfcBuildingElement* element = *it;
+
+            print_type(*it);
+            // std::cout << element->entity->toString() << std::endl;
+            recurseToParent(element, con, projectId);
+
+
+
+        }
     }
 
 
+    void check_err (neo4j_result_stream_t* results) {
+        if (neo4j_check_failure(results) == NEO4J_STATEMENT_EVALUATION_FAILED) {
+            std::string s( neo4j_error_message(results) );
+            std::cout << "Error: " << s << std::endl;
+
+            const struct neo4j_failure_details* d = neo4j_failure_details(results);
+
+            if (d != NULL) {
+                std::cout << std::endl;
+                if (d->context != NULL) {
+                    std::cout << std::string(d->context) << std::endl;
+                }
+                std::cout << std::string(d->code) << std::endl;
+                std::cout << std::string(d->description) << std::endl;
+                std::cout << std::string(d->message) << std::endl;
+                std::cout << std::endl;
+            }
+        }
+    }
+
+    void print_result (neo4j_result_stream_t* result) {
+        neo4j_render_table(stdout, result, 80,  0);
+    }
+
+    bool reset_neo4j (neo4j_session_t* session) {
+
+        neo4j_result_stream_t *results = neo4j_run(session, "MATCH (n) OPTIONAL MATCH (n)-[r]-() DELETE n,r", neo4j_null);
+        if (results == NULL)
+        {
+            neo4j_perror(stderr, errno, "Failed to run statement");
+            return EXIT_FAILURE;
+        }
+        check_err(results);
+        print_result(results);
+
+        neo4j_close_results(results);
+
+        return true;
+    }
+
+    bool neo_exec(neo4j_session_t& session, std::string cmd, bool dump = false) {
+
+        if (dump) {
+            std::cout << cmd << std::endl;
+        }
+
+        neo4j_result_stream_t *results = neo4j_run(&session, cmd.c_str(), neo4j_null);
+        if (results == NULL) {
+            neo4j_perror(stderr, errno, "Failed to run statement");
+            return false;
+        }
+        check_err(results);
+        // print_result(results);
+        neo4j_close_results(results);
+
+        return true;
+    }
+
+    void build_neo_graph(IfcParse::IfcFile& file) {
+
+        const int bulk_size = 500;
+
+        neo4j_client_init();
+
+        neo4j_connection_t *connection = neo4j_connect("bolt://neo4j:asdfasdf@localhost:7687", NULL, NEO4J_INSECURE);
+        if (connection == NULL)
+        {
+            neo4j_perror(stderr, errno, "Connection failed");
+            return;
+        }
+
+        neo4j_session_t *session = neo4j_new_session(connection);
+        if (session == NULL)
+        {
+            neo4j_perror(stderr, errno, "Failed to start session");
+            return;
+        }
+
+        if (reset_neo4j(session) == false) {
+            Logger::Message(Logger::LOG_ERROR, "Could not reset neo4j.");
+            return;
+        }
+
+        std::cout << "Nodes." << std::endl;
+        bool first = true;
+        std::stringstream s;
+        s << "CREATE ";
+        int counter = 0;
+        for (auto a = file.begin(); a != file.end(); ++a) {
+
+            IfcUtil::IfcBaseClass* i = a->second;
+            if (i->is(IfcSchema::IfcCartesianPoint::Class())) {
+                continue;
+            }
+            // jDoc props = collect_props(i);
+
+            // rapidjson::StringBuffer buf;
+            // rapidjson::Writer<rapidjson::StringBuffer> w(buf);
+            // props.Accept(w);
+
+            // std::string json = std::string(buf.GetString());
+
+
+            if (!first) {
+                s << ", ";
+            } else {
+                first = false;
+            }
+
+            s << "(n" << counter << ":" << IfcSchema::Type::ToString(i->type()) << ":IfcNode{id:" << i->entity->id() << "}"<< ")";
+
+            if (counter % bulk_size == 0 && counter != 0) {
+                std::cerr << counter << std::endl;
+                std::string cmd = s.str();
+                if (neo_exec(*session, s.str()) == false) {
+                    return;
+                }
+
+                s.str("");
+                s << "CREATE ";
+                first = true;
+            }
+
+            counter++;
+        }
+
+        if (neo_exec(*session, s.str()) == false ) {
+            return;
+        }
+
+        s.str("");
+
+        std::cout << "Relations" << std::endl;
+        std::stringstream create_part;
+        create_part << "CREATE ";
+        s << "MATCH ";
+        counter = 0;
+        first = true;
+        bool has_data = false;
+        for (auto a = file.begin(); a != file.end(); ++a) {
+
+            IfcUtil::IfcBaseClass* i = a->second;
+
+            if (i->is(IfcSchema::IfcCartesianPoint::Class())) {
+                continue;
+            }
+
+            int currentId = i->entity->id();
+
+            jDoc props = collect_props(i);
+            rapidjson::StringBuffer buf;
+            rapidjson::Writer<rapidjson::StringBuffer> w(buf);
+            props.Accept(w);
+
+            std::string json = std::string(buf.GetString());
+            // std::cout << json << std::endl;
+
+
+            for (jValue::ConstMemberIterator itr = props.MemberBegin(); itr != props.MemberEnd(); ++itr) {
+
+                if (itr->value.IsObject() && itr->value.HasMember("ref")) {
+                    for (auto& v: itr->value["ref"].GetArray()) {
+                        // std::cout << v.GetInt() << std::endl;
+                        // std::cout << currentId << " -> " << itr->name.GetString() << " -> " << v.GetInt() << std::endl;
+                        //  || i->is(IfcSchema::IfcPolyLoop::Class())
+
+                        // std::cout << v.GetInt() << std::endl;
+
+                        if (v.GetInt() != 0) {
+                            IfcUtil::IfcBaseClass* ent = file.entityById(v.GetInt());
+
+                            if (ent != NULL && ent->is(IfcSchema::IfcCartesianPoint::Class()) ) {
+                                continue;
+                            }
+                        }
+
+                        if (!first) {
+                            s << ",";
+                            // s << "WITH count(*) as dummy\n";
+                            create_part << ",";
+                        } else {
+                            first = false;
+                        }
+
+                        has_data = true;
+                        s << "(a" << counter << ":IfcNode{id:" << currentId << "}), (b" << counter << ":IfcNode{id:" << v.GetInt() << "})\n";
+
+                        create_part << "(a" << counter << ")-[r" << counter << ":PropRel{name:'" << itr->name.GetString() << "'}]->(b" << counter << ")\n";
+
+
+                        if (counter % 1 == 0 && counter != 0) {
+                        // if (counter % 2 == 0 && counter != 0) {
+                            if (neo_exec(*session, s.str() + create_part.str(), false) == false) {
+                                return;
+                            }
+
+                            first = true;
+                            s.str("");
+                            create_part.str("");
+
+                            s << "MATCH ";
+                            create_part << "CREATE ";
+                            has_data = false;
+                        }
+
+                        counter++;
+                    }
+                }
+            }
+        }
+
+        // std::cout << s.str() << create_part.str() << std::endl;
+        if (has_data && neo_exec(*session, s.str() + create_part.str())) {
+            return;
+        }
+
+    }
+
+    // END NEO
 
 }
 
@@ -590,11 +932,21 @@ bool create_table (pqxx::connection& con) {
         W.exec( s.str().c_str() );
         s.str("");
 
+        s << "DROP TABLE IF EXISTS " << con.esc(importer::PROJECT_TABLE) << ";";
+        W.exec( s.str().c_str() );
+        s.str("");
+
         s << "DROP TYPE IF EXISTS " << con.esc(importer::DATA_IFCTYPE) << ";";
         W.exec( s.str().c_str() );
         s.str("");
 
         s << "CREATE TYPE " << con.esc(importer::DATA_IFCTYPE) << " AS ENUM (" << IfcTypes << ");";
+        W.exec( s.str().c_str() );
+        s.str("");
+
+        s << "CREATE TABLE " << con.esc(importer::PROJECT_TABLE) << "("
+          << "id             serial PRIMARY KEY,"
+          << "name           TEXT UNIQUE NOT NULL)";
         W.exec( s.str().c_str() );
         s.str("");
 
@@ -604,8 +956,8 @@ bool create_table (pqxx::connection& con) {
           << "type           ifctypes    NOT NULL,"
           << "properties     JSONB     NOT NULL,"
           << "entity         TEXT,"
-          << "geometry       JSONB)";
-
+          << "geometry       JSONB,"
+          << "projectid      integer NOT NULL REFERENCES " << con.esc(importer::PROJECT_TABLE) << " (id) )";
         W.exec( s.str().c_str() );
 
         W.commit();
@@ -620,6 +972,16 @@ bool create_table (pqxx::connection& con) {
 
     return true;
 }
+
+
+std::string get_filename (const std::string& str) {
+    // std::cout << "Splitting: " << str << '\n';
+  unsigned found = str.find_last_of("/\\");
+  return str.substr(found + 1);
+}
+
+
+
 
 int main(int argc, char** argv) {
 
@@ -639,6 +1001,7 @@ int main(int argc, char** argv) {
         return 1;
     }
 
+    std::string project = get_filename(std::string(argv[1]));
 
     try {
         pqxx::connection con("dbname=strusoft user=strusoft password=strusoft hostaddr=127.0.0.1 port=5432");
@@ -650,151 +1013,29 @@ int main(int argc, char** argv) {
             return 1;
         }
 
+        // if (!create_table(con)) {
+        //     std::cout << "Couldn't create table";
+        //     return 1;
+        // }
 
-        if (!create_table(con)) {
-            std::cout << "Couldn't create table";
-            return 1;
-        }
+        // int projectId = importer::doImport(file, con, project);
 
-        importer::doImport(file, con);
-        importer::generateGeometry(file, con);
+        // if (projectId < 0) {
+        //     std::cout << "Couldn't create project.";
+        //     return 1;
+        // }
 
-        con.disconnect ();
+        // importer::generateGeometry(file, con, projectId);
+        importer::generateGeometry(file, con, 0);
+
+        // importer::build_neo_graph(file);
+
+        // importer::generateTree(file, con, 0);
+        con.disconnect();
         std::cout << "Connection closed." << std::endl;
 
     } catch (const std::exception& e) {
         std::cerr << e.what() << std::endl;
         return 1;
     }
-
-
-
-
 }
-
-
-
-
-// // try to find sites
-// auto root = file.entitiesByType(IfcSchema::Type::IfcProject);
-
-// // if no sites are found try buildings
-// // if (root == NULL) {
-// // 	std::cout << "Could not find any sites. Trying buildings";
-// // 	root = file.entitiesByType(IfcSchema::Type::IfcBuilding);
-// // }
-
-// if (root == NULL) {
-// 	std::cout << "Could not find any buildings";
-// 	return 0;
-// }
-
-// std::cout << "Found " << root->size() << " sites.\n";
-
-// // IfcEntityList::it proj = root->begin();
-
-/*
-
-  boost::asio::io_service ioService;
-  boost::thread_group threadpool;
-
-
-  boost::asio::io_service::work work(ioService);
-
-  for (int i = 0; i < 1; i++) {
-  threadpool.create_thread(boost::bind(&boost::asio::io_service::run, &ioService));
-  }
-
-  for (auto &elem: *root) {
-
-
-  ioService.post(boost::bind<void>([&argv]{
-  // cout << "hello \n";
-
-
-
-  std::string filename( argv[1] );
-
-  IfcGeom::IteratorSettings settings;
-  settings.set(IfcGeom::IteratorSettings::USE_WORLD_COORDS, false);
-  settings.set(IfcGeom::IteratorSettings::WELD_VERTICES, false);
-  settings.set(IfcGeom::IteratorSettings::CONVERT_BACK_UNITS, true);
-  // settings.set(IfcGeom::IteratorSettings::APPLY_DEFAULT_MATERIALS, false);
-  // settings.set(IfcGeom::IteratorSettings::DISABLE_OPENING_SUBTRACTIONS, false);
-  // settings.set(IfcGeom::IteratorSettings::NO_NORMALS, true);
-  // settings.set(IfcGeom::IteratorSettings::WELD_VERTICES, false);
-  // // settings.set(IfcGeom::IteratorSettings::DISABLE_TRIANGULATION, true);
-  // settings.set(IfcGeom::IteratorSettings::FASTER_BOOLEANS, true);
-  // settings.set(IfcGeom::IteratorSettings::GENERATE_UVS, false);
-  // settings.set(IfcGeom::IteratorSettings::USE_WORLD_COORDS, true);
-  // settings.set(IfcGeom::IteratorSettings::SEW_SHELLS, true);
-  // // settings.set(IfcGeom::IteratorSettings::TRAVERSE, true);
-
-  IfcGeom::Iterator<double> contextIterator(settings, filename);
-
-  if (contextIterator.initialize() == false) {
-  std::cout << "failed to initialize contextIterator.\n";
-  return 1;
-  }
-
-  // std::cout << "Initialized contextIterator.\n";
-
-
-  // std::cout << "id : " << elem->entity->id() << "\n";
-
-  fetchGeom(contextIterator);
-
-  // return 1;
-  }));
-  }
-
-  ioService.stop();
-  threadpool.join_all();
-
-
-*/
-
-
-// Lets get a list of IfcBuildingElements, this is the parent
-// type of things like walls, windows and doors.
-// entitiesByType is a templated function and returns a
-// templated class that behaves like a std::vector.
-// Note that the return types are all typedef'ed as members of
-// the generated classes, ::list for the templated vector class,
-// ::ptr for a shared pointer and ::it for an iterator.
-// We will simply iterate over the vector and print a string
-// representation of the entity to stdout.
-//
-// Secondly, lets find out which of them are IfcWindows.
-// In order to access the additional properties that windows
-// have on top af the properties of building elements,
-// we need to cast them to IfcWindows. Since these properties
-// are optional we need to make sure the properties are
-// defined for the window in question before accessing them.
-// IfcBuildingElement::list::ptr elements = file.entitiesByType<IfcBuildingElement>();
-
-// std::cout << "Found " << elements->size() << " elements in " << argv[1] << ":" << std::endl;
-
-
-// for ( IfcBuildingElement::list::it it = elements->begin(); it != elements->end(); ++ it ) {
-
-// 	const IfcBuildingElement* element = *it;
-
-// 	element->Representation()->Representations()->begin();
-
-
-// 	// std::cout << element->entity->toString() << std::endl;
-
-// 	// if ( element->is(IfcBeam::Class()) ) {
-// 	// 	std::cout << "asdf";
-
-// 	// 	// const IfcBeam* beam = (IfcBeam*)element;
-
-
-// 	// 	// if ( window->hasOverallWidth() && window->hasOverallHeight() ) {
-// 	// 	// 	const double area = window->OverallWidth()*window->OverallHeight();
-// 	// 	// 	std::cout << "The area of this window is " << area << std::endl;
-// 	// 	// }
-// 	// }
-
-// }

@@ -38,5 +38,5 @@ set_target_properties(IfcAdvancedHouse PROPERTIES FOLDER Examples)
 include_directories(PostgreSQL_INCLUDE_DIRS)
 
 ADD_EXECUTABLE(IfcDumpGeomExample IfcDumpGeomExample.cpp)
-TARGET_LINK_LIBRARIES(IfcDumpGeomExample IfcParse ${IFCOPENSHELL_LIBRARIES} ${OPENCASCADE_LIBRARIES} ${Boost_LIBRARIES} ${PostgreSQL_LIBRARIES} "/usr/local/lib/libpqxx.dylib")
+TARGET_LINK_LIBRARIES(IfcDumpGeomExample IfcParse ${IFCOPENSHELL_LIBRARIES} ${OPENCASCADE_LIBRARIES} ${Boost_LIBRARIES} ${PostgreSQL_LIBRARIES} "/usr/local/lib/libpqxx.dylib" "/usr/local/lib/libneo4j-client.dylib")
 set_target_properties(IfcDumpGeomExample PROPERTIES FOLDER Examples)
