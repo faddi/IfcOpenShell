@@ -35,6 +35,7 @@
 #include <rapidjson/document.h>
 #include <rapidjson/stringbuffer.h>
 #include <rapidjson/writer.h>
+#include <rapidjson/prettywriter.h>
 
 #include "IfcTypes.h"
 
@@ -185,8 +186,8 @@ namespace importer {
                   << "SET geometry = '" << con.esc(json) << "' \n"
                   << "WHERE entityid = " << ob->id() << " AND projectid = " << project << ";";
 
-                // pqxx::nontransaction W(con);
-                // W.exec( s.str().c_str() );
+                pqxx::nontransaction W(con);
+                W.exec( s.str().c_str() );
             }
 
         } while (contextIterator.next());
@@ -228,6 +229,16 @@ namespace importer {
 
     void print_type(IfcUtil::IfcBaseClass* instance) {
         std::cout << IfcSchema::Type::ToString(instance->type()) << std::endl;
+    }
+
+    template<typename T>
+    void dump_json(T& d) {
+        rapidjson::StringBuffer buf;
+        rapidjson::PrettyWriter<rapidjson::StringBuffer> w(buf);
+        d.Accept(w);
+
+        std::string json = std::string(buf.GetString());
+        std::cout << json << std::endl;
     }
 
     // Format an IFC attribute and maybe returns as string. Only literal scalar
@@ -441,6 +452,64 @@ namespace importer {
         return after;
     }
 
+    void recurseToParent(IfcUtil::IfcBaseClass* e, std::vector<IfcUtil::IfcBaseClass*>& l) {
+
+        IfcSchema::IfcObjectDefinition* objDef = static_cast<IfcSchema::IfcObjectDefinition*>(e);
+        if (!objDef) {
+            return;
+        }
+
+        // IfcSchema::IfcRelDecomposes::list::ptr decompList = objDef->Decomposes();
+        auto decompList = objDef->Decomposes();
+
+        for (auto* it: *decompList) {
+            // IfcTemplatedEntityList<IfcObjectDefinition>::ptr objects = it->RelatedObjects();
+            // print_type(it->RelatingObject());
+
+            recurseToParent(it->RelatingObject(), l);
+            l.push_back(it->RelatingObject());
+        }
+
+        IfcSchema::IfcElement* element = static_cast<IfcSchema::IfcElement*>(e);
+        if (element) {
+
+            IfcTemplatedEntityList<IfcRelContainedInSpatialStructure>::ptr a = element->ContainedInStructure();
+            for ( IfcRelContainedInSpatialStructure::list::it itt = a->begin(); itt != a->end(); ++ itt ) {
+                IfcRelContainedInSpatialStructure* r = *itt;
+
+                // print_type(r->RelatingStructure());
+
+
+                recurseToParent(r->RelatingStructure(), l);
+                l.push_back(r->RelatingStructure());
+            }
+        }
+    }
+
+    jDoc getParents(IfcUtil::IfcBaseClass* ent) {
+
+        jDoc parents;
+        parents.SetArray();
+
+        std::vector<IfcUtil::IfcBaseClass*> l;
+        recurseToParent(ent, l);
+        l.push_back(ent);
+
+        for (auto& e: l) {
+
+            jValue parent;
+            parent.SetObject();
+
+            parent.AddMember("type", jValue(IfcSchema::Type::ToString(e->type()).c_str(), parents.GetAllocator()), parents.GetAllocator());
+            jDoc props = collect_props(e);
+            parent.AddMember("props", jValue(props, parents.GetAllocator()) , parents.GetAllocator());
+
+            parents.PushBack(parent, parents.GetAllocator());
+        }
+
+        // dump_json<jDoc>(parents);
+        return parents;
+    }
 
     void generateGeometry(IfcParse::IfcFile& file, pqxx::connection& con, int project) {
 
@@ -456,7 +525,7 @@ namespace importer {
         settings.set(IfcGeom::IteratorSettings::FASTER_BOOLEANS, true);
         settings.set(IfcGeom::IteratorSettings::GENERATE_UVS, false);
         // settings.set(IfcGeom::IteratorSettings::USE_WORLD_COORDS, true);
-        settings.set(IfcGeom::IteratorSettings::SEW_SHELLS, true);
+        settings.set(IfcGeom::IteratorSettings::SEW_SHELLS, false);
         // // settings.set(IfcGeom::IteratorSettings::TRAVERSE, true);
         settings.set(IfcGeom::IteratorSettings::CENTER_MODEL, true);
 
@@ -478,7 +547,6 @@ namespace importer {
 
         pqxx::work W(con);
         pqxx::result res( W.exec(s.str().c_str()) );
-
         W.commit();
 
         if (res.size() != 1) {
@@ -488,13 +556,11 @@ namespace importer {
         int projectId = 0;
 
         if (res[0][0].to(projectId) == false) {
-
             std::cout << "Could not read project ID" << std::endl;
             return -1;
         }
 
         s.str("");
-
         s << "INSERT INTO " << con.esc(importer::DATA_TABLE) << " (id, entityId, type, properties, entity, projectId) VALUES \n";
 
         std::cout << "Building insert string";
@@ -505,9 +571,12 @@ namespace importer {
 
             IfcUtil::IfcBaseClass* i = a->second;
 
-            // std::cout << counter << std::endl;
+            if (i->is(IfcSchema::IfcProduct::Class()) == false && i->is(IfcSchema::IfcProject::Class()) == false) {
+                continue;
+            }
 
             jDoc props = collect_props(i);
+            props.AddMember("parents", getParents(i), props.GetAllocator());
 
             rapidjson::StringBuffer buf;
             rapidjson::Writer<rapidjson::StringBuffer> w(buf);
@@ -565,88 +634,6 @@ namespace importer {
 
     // NEO
 
-    void recurseToParent(IfcUtil::IfcBaseClass* e, pqxx::connection& con, int projectId) {
-
-
-
-        /*
-        //besök rekursivt
-        shared_ptr<IfcObjectDefinition> ifc_product = dynamic_pointer_cast<IfcObjectDefinition>(node);
-        if (ifc_product)
-        {
-            //besök alla isDecomposedBy
-            for (auto &x : ifc_product->m_IsDecomposedBy_inverse)
-            {
-                shared_ptr<IfcRelAggregates> rel(x.lock());
-                for (auto &y : rel->m_RelatedObjects)
-                    visitParent(y, child, request);
-            }
-
-            shared_ptr<IfcSpatialStructureElement> spatial = dynamic_pointer_cast<IfcSpatialStructureElement>(node);
-            if (spatial)
-            {
-                //besök alla containselements
-                for (auto &x : spatial->m_ContainsElements_inverse)
-                {
-                    shared_ptr<IfcRelContainedInSpatialStructure> rel(x.lock());
-                    for (auto &y : rel->m_RelatedElements)
-                        visitParent(y, child, request);
-                }
-            }
-        }
-        */
-
-
-        IfcSchema::IfcObjectDefinition* objDef = static_cast<IfcSchema::IfcObjectDefinition*>(e);
-        if (!objDef) {
-            return;
-        }
-
-        // IfcSchema::IfcRelDecomposes::list::ptr decompList = objDef->Decomposes();
-        auto decompList = objDef->Decomposes();
-
-        for (auto* it: *decompList) {
-            // IfcTemplatedEntityList<IfcObjectDefinition>::ptr objects = it->RelatedObjects();
-            print_type(it->RelatingObject());
-            recurseToParent(it->RelatingObject(), con, projectId);
-        }
-
-        IfcSchema::IfcElement* element = static_cast<IfcSchema::IfcElement*>(e);
-        if (element) {
-
-            IfcTemplatedEntityList<IfcRelContainedInSpatialStructure>::ptr a = element->ContainedInStructure();
-            for ( IfcRelContainedInSpatialStructure::list::it itt = a->begin(); itt != a->end(); ++ itt ) {
-                IfcRelContainedInSpatialStructure* d = *itt;
-                print_type(d->RelatingStructure());
-                recurseToParent(d->RelatingStructure(), con, projectId);
-            }
-
-        }
-
-
-
-    }
-
-    void generateTree(IfcParse::IfcFile& file, pqxx::connection& con, int projectId) {
-
-        std::cout << "generating tree" << std::endl;
-
-        // IfcProduct::list::ptr elements = file.entitiesByType<IfcSchema::IfcProduct>();
-        IfcBuildingElement::list::ptr elements = file.entitiesByType<IfcBuildingElement>();
-
-        std::cerr << "Found " << elements->size() << " IfcBuildingElements" << std::endl;
-
-        for ( IfcBuildingElement::list::it it = elements->begin(); it != elements->end(); ++ it ) {
-            IfcBuildingElement* element = *it;
-
-            print_type(*it);
-            // std::cout << element->entity->toString() << std::endl;
-            recurseToParent(element, con, projectId);
-
-
-
-        }
-    }
 
 
     void check_err (neo4j_result_stream_t* results) {
@@ -980,9 +967,6 @@ std::string get_filename (const std::string& str) {
   return str.substr(found + 1);
 }
 
-
-
-
 int main(int argc, char** argv) {
 
     if ( argc != 2 ) {
@@ -1018,19 +1002,18 @@ int main(int argc, char** argv) {
         //     return 1;
         // }
 
-        // int projectId = importer::doImport(file, con, project);
+        int projectId = importer::doImport(file, con, project);
 
         // if (projectId < 0) {
         //     std::cout << "Couldn't create project.";
         //     return 1;
         // }
 
-        // importer::generateGeometry(file, con, projectId);
-        importer::generateGeometry(file, con, 0);
+        importer::generateGeometry(file, con, projectId);
+        // importer::generateGeometry(file, con, 0);
 
         // importer::build_neo_graph(file);
 
-        // importer::generateTree(file, con, 0);
         con.disconnect();
         std::cout << "Connection closed." << std::endl;
 
