@@ -502,7 +502,7 @@ namespace importer {
 
             parent.AddMember("type", jValue(IfcSchema::Type::ToString(e->type()).c_str(), parents.GetAllocator()), parents.GetAllocator());
             jDoc props = collect_props(e);
-            parent.AddMember("props", jValue(props, parents.GetAllocator()) , parents.GetAllocator());
+            parent.AddMember("properties", jValue(props, parents.GetAllocator()) , parents.GetAllocator());
 
             parents.PushBack(parent, parents.GetAllocator());
         }
@@ -997,20 +997,23 @@ int main(int argc, char** argv) {
             return 1;
         }
 
+        // std::cout << "1" << std::endl;
+
         // if (!create_table(con)) {
         //     std::cout << "Couldn't create table";
         //     return 1;
         // }
+        // std::cout << "2" << std::endl;
 
         int projectId = importer::doImport(file, con, project);
 
-        // if (projectId < 0) {
-        //     std::cout << "Couldn't create project.";
-        //     return 1;
-        // }
+        if (projectId < 0) {
+            std::cout << "Couldn't create project.";
+            return 1;
+        }
 
         importer::generateGeometry(file, con, projectId);
-        // importer::generateGeometry(file, con, 0);
+        importer::generateGeometry(file, con, 0);
 
         // importer::build_neo_graph(file);
 
@@ -1018,6 +1021,7 @@ int main(int argc, char** argv) {
         std::cout << "Connection closed." << std::endl;
 
     } catch (const std::exception& e) {
+        std::cout << "exception" << std::endl;
         std::cerr << e.what() << std::endl;
         return 1;
     }
